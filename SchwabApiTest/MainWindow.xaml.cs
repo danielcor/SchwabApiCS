@@ -12,6 +12,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Navigation;
+using SchwabApiCS_Test.Properties;
+using SchwabAPICS;
 using static SchwabApiCS.SchwabApi;
 using static SchwabApiCS.Streamer;
 using static SchwabApiCS.Streamer.AccountActivity.ExecutionRequested;
@@ -25,9 +27,9 @@ namespace SchwabApiTest
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
 
-        private static SchwabApi schwabApi;
+        private static SchwabApi? _schwabApi;
         private string tokenDataFileName = "";
-        private SchwabTokens schwabTokens;
+        private SchwabTokensBase schwabTokens;
         private const string title = "SchwabApiCS - Schwab API Library Test";
         private Streamer streamer;
         private string resourcesPath;
@@ -40,23 +42,32 @@ namespace SchwabApiTest
                 Title = title + ", version " + SchwabApi.Version;
                 DataContext = this;
 
-                // modify tokenDataFileName to where your tokens and accountNumber for testing are located
-                resourcesPath = System.IO.Directory.GetCurrentDirectory();
-                var p = resourcesPath.IndexOf(@"\SchwabApiTest\");
-                if (p != -1)
-                    resourcesPath = resourcesPath.Substring(0, p + 15);
-                tokenDataFileName = resourcesPath + "SchwabTokens.json"; // located in the project folder.
 
-                schwabTokens = new SchwabTokens(tokenDataFileName); // gotta get the tokens First.
-                if (schwabTokens.NeedsReAuthorization)
-                { // use WPF dll to start web browser to capture new tokens
-                    SchwabApiCS_WPF.ApiAuthorize.Open(tokenDataFileName);
-                    schwabTokens = new SchwabTokens(tokenDataFileName); // reload changes
+                if (string.IsNullOrWhiteSpace(Settings.Default.TokenServiceProviderPath))
+                {
+                    // modify tokenDataFileName to where your tokens and accountNumber for testing are located
+
+                    resourcesPath = System.IO.Directory.GetCurrentDirectory();
+                    var p = resourcesPath.IndexOf(@"\SchwabApiTest\");
+                    if (p != -1)
+                        resourcesPath = resourcesPath.Substring(0, p + 15);
+                    tokenDataFileName = resourcesPath + "SchwabTokens.json"; // located in the project folder.
+
+                    schwabTokens = new SchwabTokens(tokenDataFileName); // gotta get the tokens First.
+                    if (schwabTokens.NeedsReAuthorization)
+                    { // use WPF dll to start web browser to capture new tokens
+                        SchwabApiCS_WPF.ApiAuthorize.Open(tokenDataFileName);
+                        schwabTokens = new SchwabTokens(tokenDataFileName); // reload changes
+                    }
                 }
-
+                else
+                {
+                    schwabTokens = new SchwabTokenService(Settings.Default.TokenServiceProviderPath);
+                }
+               
                 try
                 {
-                    schwabApi = new SchwabApi(schwabTokens);
+                    _schwabApi = new SchwabApi(schwabTokens);
                 }
                 catch (Exception ex)
                 {
@@ -65,7 +76,7 @@ namespace SchwabApiTest
                         // RefreshTokenExpires must be incorrect. Shouldn't get here normally.
                         SchwabApiCS_WPF.ApiAuthorize.Open(tokenDataFileName);
                         schwabTokens = new SchwabTokens(tokenDataFileName); // reload changes
-                        schwabApi = new SchwabApi(schwabTokens);
+                        _schwabApi = new SchwabApi(schwabTokens);
                     }
                     else
                         throw;
@@ -131,7 +142,7 @@ namespace SchwabApiTest
         private void AppStart()
         {
             // application code starts here =============================
-            PriceChart1.schwabApi = schwabApi;
+            PriceChart1.schwabApi = _schwabApi;
 
             // for the Class Converter
             foreach (var st in Streamer.AccountActivityService.AccountActivityClasses)
@@ -331,9 +342,9 @@ namespace SchwabApiTest
             try  // see SchwabApi.cs for list of methods
             {
                 // general account methods =====================================
-                var accountHashes = schwabApi.GetAccountNumbers();  // Note: all methods will translate accountNumbers to accountHash as needed
-                accounts = schwabApi.GetAccounts(true);
-                var userPref = schwabApi.GetUserPreferences();
+                var accountHashes = _schwabApi.GetAccountNumbers();  // Note: all methods will translate accountNumbers to accountHash as needed
+                accounts = _schwabApi.GetAccounts(true);
+                var userPref = _schwabApi.GetUserPreferences();
 
                 // by default uses first on in accounts list.
                 // add file AccountNumberForTesting.txt to use a different account for testing
@@ -348,14 +359,14 @@ namespace SchwabApiTest
                     fromDate = DateTime.Today,
                     toDate = DateTime.Today.AddDays(30)
                 };
-                var aaplOptions = schwabApi.GetOptionChain("AAPL", ocp);
+                var aaplOptions = _schwabApi.GetOptionChain("AAPL", ocp);
                 var ac = aaplOptions.calls[3];
 
 
                 // start streamer services  =====================================
                 // *** NOTE ***:  ONLY ONE streamer is allowed per client.
                 // creating a second streamer will throw an exception on the first when Schwab shuts down the first channel. 
-                streamer = new Streamer(schwabApi);
+                streamer = new Streamer(_schwabApi);
 
 
                 // EquityStreamer class is not part of SchwabApiCS, but feel free to use it.
@@ -399,14 +410,14 @@ namespace SchwabApiTest
                 streamer.AccountActivities.Request(AccountActivityStreamerCallback);
 
                 // Get Quote =====================================
-                var taskAppl = schwabApi.GetQuoteAsync("AAPL");
+                var taskAppl = _schwabApi.GetQuoteAsync("AAPL");
                 taskAppl.Wait();
                 SchwabApiCS.SchwabApi.Quote.QuotePrice applQuote = taskAppl.Result.Data.quote;
                 QuoteTitle.Content = "Quote: AAPL";
                 Quote.Text = JsonConvert.SerializeObject(applQuote, Formatting.Indented); // display in MainWindow
                 TaskJson.Text = JsonConvert.SerializeObject(taskAppl, Formatting.Indented); // display in MainWindow
 
-                var quotes = schwabApi.GetQuotes("IWM,SPY,USO,InvalidSymbol,MU    240809P00121000,/ES,USD/JPY", true);
+                var quotes = _schwabApi.GetQuotes("IWM,SPY,USO,InvalidSymbol,MU    240809P00121000,/ES,USD/JPY", true);
 
                 // uncomment lines below for more testing  ===========================================
                 /*
@@ -453,11 +464,11 @@ namespace SchwabApiTest
 
 
                 // Price History =====
-                var aaplDayPrices = schwabApi.GetPriceHistory("AAPL", SchwabApi.PeriodType.year, 1, SchwabApi.FrequencyType.daily,
+                var aaplDayPrices = _schwabApi.GetPriceHistory("AAPL", SchwabApi.PeriodType.year, 1, SchwabApi.FrequencyType.daily,
                                                             1, null, null, false);
-                var aaplDayPrices1 = schwabApi.GetPriceHistory("AAPL", SchwabApi.PeriodType.year, 1, SchwabApi.FrequencyType.daily,
+                var aaplDayPrices1 = _schwabApi.GetPriceHistory("AAPL", SchwabApi.PeriodType.year, 1, SchwabApi.FrequencyType.daily,
                                                             1, DateTime.Today.AddDays(-8), DateTime.Today.AddDays(1), false); // this picks up todays price
-                var aapl15minPrices = schwabApi.GetPriceHistory("AAPL", SchwabApi.PeriodType.day, 1, SchwabApi.FrequencyType.minute,
+                var aapl15minPrices = _schwabApi.GetPriceHistory("AAPL", SchwabApi.PeriodType.day, 1, SchwabApi.FrequencyType.minute,
                                                                15, DateTime.Today.AddDays(-2), DateTime.Today.AddDays(1), true);
                 //TestExceptionHandling(); // uncomment to test
             }
@@ -472,13 +483,13 @@ namespace SchwabApiTest
         public void TestOrders(string accountNumber, SchwabApiCS.SchwabApi.Quote.QuotePrice applQuote)
         {
             // === ORDERS: uncomment ones you want to test.  Best to execute after hours, or use prices that won't fill. ============================
-            var pQuote = schwabApi.GetQuote("GLD"); // change this symbol to one you have a postion in
+            var pQuote = _schwabApi.GetQuote("GLD"); // change this symbol to one you have a postion in
 
             // place a OCO bracket order to close a GLD position
             //var ocoOrderNumber = schwabApi.OrderOCOBracket(accountNumber, pQuote.symbol, Order.GetAssetType(pQuote.assetMainType), Order.Duration.DAY, Order.Session.NORMAL,
             //                                             -1, pQuote.quote.mark + 20, pQuote.quote.mark - 20);  // qty is negative to sell
 
-            var limitOrder = schwabApi.OrderSingle(accountNumber, pQuote.symbol, Order.GetAssetType(pQuote.assetMainType), Order.OrderType.LIMIT, Order.Session.NORMAL,
+            var limitOrder = _schwabApi.OrderSingle(accountNumber, pQuote.symbol, Order.GetAssetType(pQuote.assetMainType), Order.OrderType.LIMIT, Order.Session.NORMAL,
                                                    Order.Duration.DAY, Order.Position.TO_OPEN, 1, pQuote.quote.mark - 20); // -20 shouldn't fill.
 
             // var marketOrder = schwabApi.OrderSingle(accountNumber, pQuote.symbol, Order.GetAssetType(pQuote.assetMainType), Order.OrderType.MARKET, Order.Session.NORMAL,
@@ -487,14 +498,14 @@ namespace SchwabApiTest
             var orderOCO = new SchwabApiCS.Order(Order.OrderType.LIMIT, Order.OrderStrategyTypes.TRIGGER, Order.Session.NORMAL,
                                      Order.Duration.GOOD_TILL_CANCEL, 180M);
             orderOCO.Add(new Order.OrderLeg("AAPL", Order.AssetType.EQUITY, Order.Position.TO_OPEN, 1));
-            var orderTriggersOCO = schwabApi.OrderTriggersOCOBracketAsync(accountNumber, orderOCO, 250M, 150M);
+            var orderTriggersOCO = _schwabApi.OrderTriggersOCOBracketAsync(accountNumber, orderOCO, 250M, 150M);
             orderTriggersOCO.Wait();
 
-            var stopLoss = schwabApi.OrderStopLoss(accountNumber, pQuote.symbol, Order.GetAssetType(pQuote.assetMainType), Order.Duration.GOOD_TILL_CANCEL,
+            var stopLoss = _schwabApi.OrderStopLoss(accountNumber, pQuote.symbol, Order.GetAssetType(pQuote.assetMainType), Order.Duration.GOOD_TILL_CANCEL,
                                                    Order.Session.NORMAL, -1, pQuote.quote.mark - 10);
             if (stopLoss != null)
             {
-                var result = schwabApi.OrderExecuteDelete(accountNumber, (long)stopLoss); // delete order just created
+                var result = _schwabApi.OrderExecuteDelete(accountNumber, (long)stopLoss); // delete order just created
             }
 
             // OrderFirstTriggersSecond ==================================
@@ -507,27 +518,27 @@ namespace SchwabApiTest
             order2.Add(new Order.OrderLeg(pQuote.symbol, Order.GetAssetType(pQuote.assetMainType), Order.Position.TO_CLOSE, -1));
 
             // send the orders
-            var orderTrigger = schwabApi.OrderTriggersSecond(accountNumber, order1, order2);
+            var orderTrigger = _schwabApi.OrderTriggersSecond(accountNumber, order1, order2);
             if (orderTrigger != null)
             {
-                var order = schwabApi.GetOrder(accountNumber, (long)orderTrigger);
+                var order = _schwabApi.GetOrder(accountNumber, (long)orderTrigger);
 
                 if (order.status != Order.Status.REJECTED.ToString())
                 {
-                    var result = schwabApi.OrderExecuteDelete(accountNumber, (long)orderTrigger); // delete order just created
+                    var result = _schwabApi.OrderExecuteDelete(accountNumber, (long)orderTrigger); // delete order just created
                 }
             }
 
             var price2 = applQuote.mark - 50; // use price that won't fill
-            var orderId = schwabApi.OrderSingle(accountNumber, "AAPL", Order.AssetType.EQUITY, Order.OrderType.LIMIT,
+            var orderId = _schwabApi.OrderSingle(accountNumber, "AAPL", Order.AssetType.EQUITY, Order.OrderType.LIMIT,
                                               Order.Session.NORMAL, Order.Duration.GOOD_TILL_CANCEL, 1, price2); // this shouldn't fill
                                                                                                                  // what does the json order just sent look like? - add a watch for "SchwabApi.LastOrderJson"
             if (orderId != null)
             {
-                var order = schwabApi.GetOrder(accountNumber, (long)orderId);
+                var order = _schwabApi.GetOrder(accountNumber, (long)orderId);
                 if (order.status != Order.Status.REJECTED.ToString())
                 {
-                    var task = schwabApi.OrderExecuteDeleteAsync(accountNumber, (long)orderId); // delete order just created
+                    var task = _schwabApi.OrderExecuteDeleteAsync(accountNumber, (long)orderId); // delete order just created
                     task.Wait();
                     var schwabClientCorrelId = task.Result.SchwabClientCorrelId;  // this is Schwab's service reqest tracking GIUD
                 }
@@ -550,7 +561,7 @@ namespace SchwabApiTest
         /// </summary>
         public void TestExceptionHandling()
         {
-            var taskErr = schwabApi.GetAccountTransactionsAsync("12345678", DateTime.Today.AddMonths(-3),
+            var taskErr = _schwabApi.GetAccountTransactionsAsync("12345678", DateTime.Today.AddMonths(-3),
                                                           DateTime.Now, SchwabApi.TransactionTypes.TRADE);
             taskErr.Wait();
             //var d2 = taskErr.Result.Data; // this would throw an error right away if taskErr.Result.HasError is true

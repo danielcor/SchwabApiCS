@@ -13,12 +13,12 @@ using static SchwabApiCS.SchwabApi;
 
 namespace SchwabApiCS
 {
-    public class SchwabTokens
+    public class SchwabTokens : SchwabTokensBase
     {
         public const string baseUrl = "https://api.schwabapi.com/v1/oauth";
-        public SchwabTokensData tokens;
         private string tokenDataFileName;
-
+        public SchwabTokensData tokens { get; set; }
+        
         /// <summary>
         /// Loads saved tokens info
         /// </summary>
@@ -42,9 +42,7 @@ namespace SchwabApiCS
             if (string.IsNullOrEmpty(tokens.Secret)) throw new SchwabApiException("Schwab Secret is not defined");
             if (string.IsNullOrEmpty(tokens.Redirect_uri)) throw new SchwabApiException("SchwabRedirect_uri is not defined");
         }
-
-        public bool NeedsReAuthorization {  get { return DateTime.Now >= tokens.RefreshTokenExpires; } }
-
+        
         public System.Uri AuthorizeUri
         {
             get { return new System.Uri(baseUrl + "/authorize?client_id=" + tokens.AppKey + "&redirect_uri="+ tokens.Redirect_uri); }
@@ -176,20 +174,8 @@ namespace SchwabApiCS
             public string id_token { get; set; }
         };
 
-        /// <summary>
-        /// What is saved in the token data file
-        /// </summary>
-        public class SchwabTokensData
-        {
-            public string AccessToken { get; set; } = "";
-            public string RefreshToken { get; set; } = "";
-            public DateTime AccessTokenExpires { get; set; }
-            public DateTime RefreshTokenExpires { get; set; }
+       
 
-            public string AppKey { get; set; } = "";
-            public string Secret { get; set; } = "";
-            public string Redirect_uri { get; set; } = "";
-        }
     }
 }
 

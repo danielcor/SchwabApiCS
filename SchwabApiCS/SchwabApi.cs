@@ -119,7 +119,7 @@ namespace SchwabApiCS
         public bool NeedsReAuthorization { get { return schwabTokens.NeedsReAuthorization; } }
 
 
-        internal static SchwabTokens schwabTokens;
+        internal static SchwabTokensBase schwabTokens;
         internal IList<AccountNumber> accountNumberHashs; // load once
         internal const string utcDateFormat = "yyyy-MM-dd'T'HH:mm:ss.fff'Z'";
         internal static JsonSerializerSettings jsonSettings = new JsonSerializerSettings() { MissingMemberHandling = MissingMemberHandling.Error };
@@ -128,7 +128,7 @@ namespace SchwabApiCS
         /// Schwab API class
         /// </summary>
         /// <param name="schwabTokens"></param>
-        public SchwabApi(SchwabTokens schwabTokens)
+        public SchwabApi(SchwabTokensBase schwabTokens)
         {
             SchwabApi.schwabTokens = schwabTokens;
 
